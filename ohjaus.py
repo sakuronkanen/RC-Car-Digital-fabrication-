@@ -15,15 +15,44 @@ _IRQ_CENTRAL_CONNECT    = const(1)
 _IRQ_CENTRAL_DISCONNECT = const(2)
 _IRQ_GATTS_WRITE        = const(3)
 
-MOTOR_IN1_PIN = 2
-MOTOR_IN2_PIN = 3
-MOTOR_PWM_PIN = 9
+
+# =========================
+# DC motor setup
+# =========================
+
+MOTOR_IN1_PIN = 13
+MOTOR_IN2_PIN = 14
+MOTOR_PWM_PIN = 15
 
 in1 = Pin(MOTOR_IN1_PIN, Pin.OUT)
 in2 = Pin(MOTOR_IN2_PIN, Pin.OUT)
 
+MIN_PWM = 30000  # duty_u16 value ~30% of max
+MAX_PWM = 65535
+
 pwm = PWM(Pin(MOTOR_PWM_PIN))
-pwm.freq(20000)  # 20kHz is quiet for DC motors (you can use 1000 too)
+pwm.freq(2500)  # 20kHz is quiet for DC motors (you can use 1000 too), 1-5kHz for smooth, testing 10khz
+
+
+# =========================
+# Servo setup
+# =========================
+servo = PWM(Pin(1))
+servo.freq(50)  # 50Hz => 20ms period
+
+def clamp(v, lo, hi):
+    return lo if v < lo else hi if v > hi else v
+
+SERVO_CENTER = 4800
+
+# Pick conservative limits first; widen later if needed.
+SERVO_MIN = 2000
+SERVO_MAX = 5500
+
+# How many duty counts per 1 joystick unit.
+# With these limits: range each side = min(4800-2000, 5500-4800) = 700
+# scale ~ 700/100 = 7
+SERVO_SCALE = 7
 
 
 def advertising_payload(name="Pico_Car", services=None):
@@ -43,25 +72,7 @@ def advertising_payload(name="Pico_Car", services=None):
     return payload
 
 
-# =========================
-# Servo setup (GPIO 1)
-# =========================
-servo = PWM(Pin(1))
-servo.freq(50)  # 50Hz => 20ms period
 
-def clamp(v, lo, hi):
-    return lo if v < lo else hi if v > hi else v
-
-SERVO_CENTER = 4800
-
-# Pick conservative limits first; widen later if needed.
-SERVO_MIN = 2000
-SERVO_MAX = 5500
-
-# How many duty counts per 1 joystick unit.
-# With these limits: range each side = min(4800-2000, 5500-4800) = 700
-# scale ~ 700/100 = 7
-SERVO_SCALE = 7
 
 def set_servo_from_x(x):
     # x expected -100..100 (int)
@@ -72,32 +83,31 @@ def set_servo_from_x(x):
 
     servo.duty_u16(duty)
 
-# center servo at startup
-set_servo_from_x(0)
-
 
 def motor_stop():
     in1.value(0)
     in2.value(0)
     pwm.duty_u16(0)
 
-def motor_set_from_y(y):
-    """
-    y: joystick Y in range -100..100
-      +y => forward
-      -y => reverse
-    """
-    y = clamp(y, -100, 100)
 
-    # small deadzone so motor doesn't whine near 0
+
+def motor_set_from_y(y):
+    y = clamp(y, -100, 100)
     if -5 < y < 5:
         motor_stop()
         return
 
-    forward = (y > 0)
-    speed = abs(y)  # 0..100
+    forward = y > 0
+    speed = abs(y)
 
-    # direction pins
+    # Map 0..100 -> 0..MAX_PWM (not MIN_PWM)
+    duty = int((speed / 100) * MAX_PWM)
+
+    #Enforce minimum duty to overcome friction
+    MIN_START_DUTY = 20000
+    if duty > 0 and duty < MIN_START_DUTY:
+        duty = MIN_START_DUTY
+
     if forward:
         in1.value(1)
         in2.value(0)
@@ -105,10 +115,10 @@ def motor_set_from_y(y):
         in1.value(0)
         in2.value(1)
 
-    # map 0..100 -> 0..65535
-    duty = int(speed * 65535 / 100)
     pwm.duty_u16(duty)
 
+# center servo at startup
+set_servo_from_x(0)
 
 # =========================
 # BLE NUS Peripheral
@@ -164,3 +174,4 @@ nus = NUS(ble)
 import time
 while True:
     time.sleep(1)
+
