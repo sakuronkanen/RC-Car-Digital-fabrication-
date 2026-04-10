@@ -1,10 +1,11 @@
 from machine import Pin, PWM
 import bluetooth, struct
 from micropython import const
+import time
 
-# =========================
-# BLE NUS UUIDs (must match Android app)
-# =========================
+
+# BLE NUS UUIDs
+#  ----------
 _UART_UUID = bluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
 _UART_TX   = (bluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E"), bluetooth.FLAG_NOTIFY)
 _UART_RX   = (bluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E"),
@@ -16,9 +17,8 @@ _IRQ_CENTRAL_DISCONNECT = const(2)
 _IRQ_GATTS_WRITE        = const(3)
 
 
-# =========================
 # DC motor setup
-# =========================
+#  -------
 
 MOTOR_IN1_PIN = 13
 MOTOR_IN2_PIN = 14
@@ -31,27 +31,31 @@ MIN_PWM = 30000  # duty_u16 value ~30% of max
 MAX_PWM = 65535
 
 pwm = PWM(Pin(MOTOR_PWM_PIN))
-pwm.freq(2500)  # 20kHz is quiet for DC motors (you can use 1000 too), 1-5kHz for smooth, testing 10khz
+pwm.freq(2500)  # 1-5kHz for smooth
 
 
-# =========================
+
 # Servo setup
-# =========================
+#  -------
+
 servo = PWM(Pin(1))
 servo.freq(50)  # 50Hz => 20ms period
 
 def clamp(v, lo, hi):
-    return lo if v < lo else hi if v > hi else v
+    if v < lo:
+        return lo
+    elif v > hi:
+        return hi
+    else:
+        return v
 
 SERVO_CENTER = 4800
 
-# Pick conservative limits first; widen later if needed.
-SERVO_MIN = 2000
-SERVO_MAX = 5500
+#Conservative limits
+SERVO_MIN = 1500
+SERVO_MAX = 6000
 
-# How many duty counts per 1 joystick unit.
-# With these limits: range each side = min(4800-2000, 5500-4800) = 700
-# scale ~ 700/100 = 7
+# Range each side = min(4800-2000, 5500-4800) = 700
 SERVO_SCALE = 7
 
 
@@ -61,21 +65,18 @@ def advertising_payload(name="Pico_Car", services=None):
     def _append(adv_type, value):
         payload.extend(struct.pack("BB", len(value) + 1, adv_type) + value)
 
-    _append(0x01, b"\x06")          # flags
-    _append(0x09, name.encode())    # complete local name
+    _append(0x01, b"\x06")          #flags
+    _append(0x09, name.encode())    #local name
 
     if services:
         for uuid in services:
             b = bytes(uuid)
             if len(b) == 16:
-                _append(0x07, b)    # complete list of 128-bit UUIDs
+                _append(0x07, b)
     return payload
 
 
-
-
 def set_servo_from_x(x):
-    # x expected -100..100 (int)
     x = clamp(x, -100, 100)
 
     duty = SERVO_CENTER + (x * SERVO_SCALE)
@@ -89,8 +90,6 @@ def motor_stop():
     in2.value(0)
     pwm.duty_u16(0)
 
-
-
 def motor_set_from_y(y):
     y = clamp(y, -100, 100)
     if -5 < y < 5:
@@ -99,11 +98,10 @@ def motor_set_from_y(y):
 
     forward = y > 0
     speed = abs(y)
-
-    # Map 0..100 -> 0..MAX_PWM (not MIN_PWM)
+    
     duty = int((speed / 100) * MAX_PWM)
 
-    #Enforce minimum duty to overcome friction
+    #Give minimum duty
     MIN_START_DUTY = 20000
     if duty > 0 and duty < MIN_START_DUTY:
         duty = MIN_START_DUTY
@@ -121,7 +119,7 @@ def motor_set_from_y(y):
 set_servo_from_x(0)
 
 # =========================
-# BLE NUS Peripheral
+# BLE NUS
 # =========================
 class NUS:
     def __init__(self, ble):
@@ -169,9 +167,6 @@ class NUS:
 ble = bluetooth.BLE()
 nus = NUS(ble)
 
-# No while True needed: BLE IRQ drives updates
-# (Optional: you can sleep to reduce CPU use)
-import time
 while True:
-    time.sleep(1)
+    time.sleep(0)
 
