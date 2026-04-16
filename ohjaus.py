@@ -49,14 +49,14 @@ def clamp(v, lo, hi):
     else:
         return v
 
-SERVO_CENTER = 4800
+SERVO_CENTER = 4900
 
 #Conservative limits
-SERVO_MIN = 1500
-SERVO_MAX = 6000
+SERVO_MIN = SERVO_CENTER - 2000
+SERVO_MAX = SERVO_CENTER + 2000
 
 # Range each side = min(4800-2000, 5500-4800) = 700
-SERVO_SCALE = 7
+SERVO_SCALE = 12
 
 
 def advertising_payload(name="Pico_Car", services=None):
@@ -79,7 +79,7 @@ def advertising_payload(name="Pico_Car", services=None):
 def set_servo_from_x(x):
     x = clamp(x, -100, 100)
 
-    duty = SERVO_CENTER + (x * SERVO_SCALE)
+    duty = int(SERVO_CENTER + (x * SERVO_SCALE))
     duty = clamp(duty, SERVO_MIN, SERVO_MAX)
 
     servo.duty_u16(duty)
